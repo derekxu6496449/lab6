@@ -1,28 +1,128 @@
 ---
-title: ""
-author: ""
+title: "Lab-6"
+author: "YangXu"
 format:
   html:
     embed-resources: true
 ---
 
-## Quarto
-
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
-
-## Running Code
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
-
-```{r}
-1 + 1
+```{r message=FALSE}
+library(tidytext)
+library(dplyr)
+library(ggplot2)
+library(data.table)
+if (!file.exists("mtsanples.csv"))
+  download.file(
+    url = "https://raw.githubusercontent.com/USCbiostats/data-science-data/master/00_mtsamples/mtsamples.csv",
+    destfile = "mtsamples.csv",
+    method   = "libcurl",
+    timeout  = 60
+    )
+samples <- read.csv("mtsamples.csv")
 ```
 
-You can add options to executable code like this
-
+Q1. What specialties do we have?
 ```{r}
-#| echo: false
-2 * 2
+samples %>%
+  count(medical_specialty)
+```
+We have 40 medical specialties.
+From the names of specialties, it is possible that some of categories are overlapping or related.
+But we can not determine whether some of them are really related, overlapping or evenly distributed
+only given the counts of each category.
+
+
+
+Q2.
+Tokenize the the words in the transcription column
+Count the number of times each token appears
+Visualize the top 20 most frequent words
+```{r}
+library(forcats)
+samples %>%
+  unnest_tokens(token, transcription) %>%
+  count(token) %>%
+  top_n(20,n) %>%
+  ggplot(aes(n,fct_reorder(token,n))) +
+  geom_col()
+```
+We can see that most of these words are sort of meaningless, such as 'the', 'and'.
+It means we can not get enough useful information from these words and we need to remove stopwords.
+
+
+
+Q3.
+Redo visualization but remove stopwords before
+Bonus points if you remove numbers as well
+```{r}
+samples %>%
+  unnest_tokens(token, transcription) %>%
+  anti_join(stop_words, by = c("token" = "word")) %>%
+  count(token) %>%
+  top_n(20,n) %>%
+  ggplot(aes(n,fct_reorder(token,n))) +
+  geom_col()
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+Q4.
+repeat question 2, but this time tokenize into bi-grams. how does the result change if you look at tri-grams?
+```{r}
+# bi-grams
+samples %>%
+  unnest_ngrams(ngram, transcription, n = 2) %>%
+  count(ngram) %>%
+  top_n(20, n) %>%
+  ggplot(aes(n,fct_reorder(ngram,n))) +
+  geom_col()
+
+# tri-grams
+samples %>%
+  unnest_ngrams(ngram, transcription, n = 3) %>%
+  count(ngram) %>%
+  top_n(20, n) %>%
+  ggplot(aes(n,fct_reorder(ngram,n))) +
+  geom_col()
+```
+Tri-grams provide more informaion to us about the transcription. And some of the most frequent phases in 
+tri-grams are the combination of two-word-length phases. 'the patient was' is the combination of 'the patient'
+and 'patient was'.
+
+
+Q5.
+Using the results you got from questions 4. Pick a word and count the words that appears after and before it.
+```{r}
+# choose the word 'illness'
+# count the word after it
+library(tidyr)
+samples %>%
+  unnest_ngrams(ngram, transcription, n = 2) %>%
+  separate(ngram, into = c("word1", "word2"), sep = " ") %>%
+  select(word1, word2) %>%
+  filter(word1 == "illness") %>%
+  count(word2, sort = TRUE)
+
+# count the word before it
+samples %>%
+  unnest_ngrams(ngram, transcription, n = 2) %>%
+  separate(ngram, into = c("word1", "word2"), sep = " ") %>%
+  select(word1, word2) %>%
+  filter(word2 == "illness") %>%
+  count(word1, sort = TRUE)
+```
+
+
+Q6.
+```{r}
+samples %>%
+  group_by(medical_specialty) %>%
+  unnest_tokens(token, transcription) %>%
+  anti_join(stop_words, by = c("token" = "word")) %>%
+  count(token) %>%
+  top_n(5,n)
+```
+
+Q7.
+It makes sense that the word 'allergies' are used much more in specialty of Allergy/Immunology.
+The same as 'tooth' and 'teeth' to specialty of Dentistry.
+It means that we can sometimes guess what the specialty is when only given the top 5 frequently
+used words in this specialty.
